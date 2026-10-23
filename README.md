@@ -1,74 +1,119 @@
-# PowerWise: Deep Learning Based Electricity Demand Forecasting
+# PowerWise Electricity Forecasting Lab
 
-PowerWise is a small educational project for learning artificial neural networks by implementing the core calculations with NumPy. Its main task is **regression**: estimate an hourly electricity demand value from past demand and available context. The repository was empty when this project was started, so there was no prior model, dataset, or architecture to retain.
+PowerWise is an educational electricity demand forecasting project organized as a small, runnable Python application. It follows a modular research-project layout with `src/`, `tests/`, `data/`, `models/`, `reports/`, a notebook, command-line training, and an optional Streamlit dashboard. Its primary neural network uses NumPy for feedforward calculations and manual backpropagation.
 
-## Dataset and honest results
+## Dataset status
 
-No measured dataset was present in the GitHub repository. The runnable demo therefore creates a deterministic, illustrative synthetic hourly series in `powerwise/data.py` (demand in arbitrary kWh-like units with daily/weekly patterns, temperature, and noise). It is useful to exercise the code, but it is **not real utility data** and its metrics must not be represented as real-world results. Replace it with a documented public dataset before drawing conclusions about actual electricity demand. Input rows need `timestamp`, `demand`, and `temperature`; features are derived using only the previous observed demand and calendar/weather columns.
+The original GitHub repository was empty and contained no dataset or forecasting code. The default demonstration therefore generates a deterministic **synthetic** hourly dataset. It is not measured utility data, and its metrics are not evidence of real-world forecasting skill. You can instead provide a CSV with `timestamp`, `demand`, and `temperature` columns. Demand and temperature should use consistent numeric units, timestamps should be hourly and sortable, and the target-hour temperature must be information available at forecast time. The first row is dropped because its previous-hour demand is unavailable.
 
 ## Architecture
 
-`timestamp`/demand/weather → chronological 70/15/15 split → standardizer fitted only on training features → vectorized NumPy MLP (ReLU hidden layer, linear output) → test metrics and plots. A persistence baseline predicts the previous hour's demand. The model's `W1`, `b1`, `W2`, and `b2` are parameters. Learning rate, epochs, hidden size, batch size, and seed are hyperparameters.
+```text
+data (CSV or synthetic) → validation and causal features → chronological 70/15/15 split
+  → standardize using training rows only → NumPy MLP (ReLU hidden, linear output)
+  → test metrics vs persistence baseline → reports and dashboard
+```
 
-The MLP computes `Z1 = X @ W1 + b1`, `A1 = ReLU(Z1)`, and `prediction = A1 @ W2 + b2`. MSE gradients are derived manually and propagated through ReLU with the chain rule; mini-batches are shuffled per epoch and a final partial batch is retained. The linear output is appropriate for continuous regression. A sigmoid is shown separately for binary classification and its derivative is `a * (1-a)`.
+The forecast is a **regression** problem: predict a continuous demand value. The six input features are previous-hour demand, cyclical hour and weekday encodings, and temperature. The persistence baseline predicts previous-hour demand. The model computes `Z1 = X @ W1 + b1`, `A1 = ReLU(Z1)`, and `prediction = A1 @ W2 + b2`. Backpropagation, MSE gradients, parameter updates, and mini-batch training are implemented directly in `src/network.py`.
 
-## Setup and run
+## Project structure
+
+```text
+PowerWise-Electricity-Demand-Forecasting/
+├── app.py                 # optional Streamlit training/results dashboard
+├── train.py               # command-line training and evaluation
+├── data/
+│   └── cache/              # reserved for local input/cache files
+├── models/                 # reserved for saved model artifacts
+├── notebooks/
+│   └── 01_forecasting_and_neural_networks.ipynb
+├── reports/                # generated reports/latest/ is git-ignored
+├── src/
+│   ├── activations.py      # step, sigmoid, ReLU, tanh, linear
+│   ├── config.py           # default hyperparameters and split fractions
+│   ├── data.py             # synthetic series, features, split, scaling, metrics
+│   ├── data_collection.py  # CSV loading and validation
+│   ├── education.py        # perceptron, logic gates, image and sigmoid demos
+│   ├── forecast.py         # end-to-end training, evaluation, and plots
+│   ├── model.py            # public model API
+│   ├── network.py          # vectorized NumPy MLP and manual gradients
+│   ├── perceptron.py       # binary perceptron from scratch
+│   ├── pipeline.py         # run orchestration
+│   └── visualization.py    # plot helpers
+├── tests/                  # pytest suite
+├── pytest.ini
+├── requirements.txt
+└── .github/workflows/ci.yml
+```
+
+## Install and run
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate       # Windows: .venv\Scripts\activate
-python -m pip install -e '.[dev]'
-python -m powerwise.education
-python -m powerwise.forecast --epochs 300 --seed 7
-pytest
+pip install -r requirements.txt
+python -m src.education
+python train.py --epochs 300 --seed 7
+pytest -q
 ```
 
-The forecast command writes `outputs/metrics.txt`, `loss.png`, `predictions.png`, and `errors.png`. Metrics are calculated on the final chronological 15% holdout, in original demand units. MAE is mean absolute error, RMSE penalizes large errors more, and R² compares residual error with predicting the test mean. The baseline and network are reported side by side; no superiority is assumed.
+To forecast from a CSV:
 
-## Learning notes
+```bash
+python train.py --csv data/my_hourly_demand.csv --epochs 300 --seed 7
+```
 
-An artificial neuron is a simplified mathematical model inspired by (but not equivalent to) a biological neuron: numeric inputs are multiplied by trainable weights, summed with a bias, then passed through an activation. For example, inputs `[2, 1]`, weights `[1.5, -1]`, bias `0.5` give `z = 2*1.5 + 1*(-1) + 0.5 = 2.5`; ReLU outputs `2.5`.
+The CSV needs these headers: `timestamp,demand,temperature`. The CLI writes `reports/latest/metrics.txt`, `loss.png`, `predictions.png`, and `errors.png`. It prints MAE, RMSE, and R² for the final chronological test segment for both the MLP and persistence baseline. The default synthetic run has no external data dependency.
 
-A single perceptron can learn linearly separable AND/OR, but cannot learn XOR because XOR classes cannot be separated by one straight decision boundary. Binary classification has two outcomes; multiclass classification selects among several output scores (the educational example uses `argmax`). Those are separate from demand forecasting regression.
+Run the interactive dashboard with:
 
-Activation examples are provided for step, sigmoid, ReLU, tanh, and linear functions. Sigmoid is evaluated stably for large positive/negative values. A grayscale 8×8 image has 64 pixels; flattening its matrix produces a 64-value input vector. This is a shape concept only, not an image classifier.
+```bash
+streamlit run app.py
+```
 
-For an illustrative six-feature network with eight hidden neurons and one output: `X (batch,6) @ W1 (6,8) + b1 (1,8) → A1 (batch,8) @ W2 (8,1) + b2 (1,1) → output (batch,1)`. Matrix inner dimensions must match so each output neuron has one weighted sum per example.
+The dashboard is an optional front end to the same educational pipeline; it does not deploy a service or connect to a utility provider.
 
-Training changes weights and biases to reduce MSE. Gradient descent updates `W_new = W_old - learning_rate * dLoss/dW`; very small learning rates progress slowly, while very large values can overshoot. Stochastic gradient descent updates one example at a time, batch gradient descent uses the entire set for one update, and mini-batch training updates on chunks. Smaller chunks usually mean more updates per epoch. A fixed seed makes the shuffle and initialization reproducible.
+## Neural network lessons
+
+An artificial neuron is a simplified mathematical model inspired by the brain. For inputs `[2, 1]`, weights `[1.5, -1]`, and bias `0.5`, the weighted sum is `z = 2(1.5) + 1(-1) + 0.5 = 2.5`; ReLU returns `2.5`. Weights and biases are learned parameters. Learning rate, epochs, hidden width, mini-batch size, and random seed are hyperparameters.
+
+The network uses matrix operations across a batch. With six features, eight hidden units, and one output, `X` is `(batch, 6)`, `W1` is `(6, 8)`, `b1` is `(1, 8)`, `W2` is `(8, 1)`, and `b2` is `(1, 1)`. Matching inner dimensions allow each layer to compute one weighted sum per neuron and example.
+
+The perceptron learns AND and OR using a threshold. It cannot learn XOR because XOR is not linearly separable. The educational examples also show binary and multiclass classification, the step/sigmoid/ReLU/tanh/linear activations, a sigmoid derivative update, and how an 8×8 grayscale image becomes 64 input values. These are separate from the demand regression problem.
+
+Training minimizes mean squared error. Mini-batch training shuffles only the training period at each epoch, uses the final incomplete batch, and records training and validation loss. Splits remain chronological, and the standardizer learns its mean and scale from training features only. Test metrics are reported in the original demand units. Do not claim the neural network is better than the baseline unless the measured test results support that conclusion.
 
 ## Syllabus coverage
 
-| Topic | Demonstration |
+| Syllabus topic | Project location |
 |---|---|
-| Biological/artificial neuron, inputs, weights, bias, activation, numeric example | README “Learning notes”; `powerwise/education.py` |
-| Perceptron formula, AND/OR learning, update, XOR limitation | `powerwise/perceptron.py`; README “Learning notes” |
-| Binary vs multiclass classification, output scores | `powerwise/education.py` |
-| Inputs, layers, regression vs classification, assumptions | `powerwise/network.py`; README “Architecture” |
-| Parameters and hyperparameters | README “Architecture” |
-| Step, sigmoid, ReLU, tanh, linear, stable sigmoid | `powerwise/activations.py`; `powerwise/education.py` |
-| Layer flow and matrix multiplication | `powerwise/network.py`; README shape example |
-| Image pixels, dimensions, flattened inputs | `powerwise/education.py` |
-| Matrix dimensions and vectorized batches | `powerwise/network.py`; README shape example |
-| MSE, loss history, gradient descent, chain rule, backprop | `powerwise/network.py` |
-| Sigmoid derivative and weight update | `powerwise/network.py:sigmoid_neuron_step` |
-| SGD/batch/mini-batch concepts, shuffle, partial batch, seed | `powerwise/network.py`; README “Learning notes” |
-| Chronological split, training-only scaling, persistence baseline, MAE/RMSE/R² | `powerwise/data.py`; `powerwise/forecast.py` |
-| Loss, prediction and error plots | `powerwise/forecast.py` |
-| Shape, loss, gradient-check, training, reproducibility, leakage checks | `tests/test_powerwise.py` |
+| Artificial neuron, brain analogy, weighted sum and numerical example | `src/education.py`, this README |
+| Perceptron learning, AND/OR, XOR limitation | `src/perceptron.py`, `src/education.py` |
+| Binary and multiclass classification | `src/education.py` |
+| Inputs, layers, regression vs classification, simplifying assumptions | `src/network.py`, this README |
+| Parameters and hyperparameters | `src/config.py`, this README |
+| Step, sigmoid, ReLU, tanh, linear and stable sigmoid | `src/activations.py` |
+| Layer-to-layer information flow and matrix dimensions | `src/network.py`, notebook |
+| Image pixels and flattened feature counts | `src/education.py`, notebook |
+| Feedforward and vectorized calculations | `src/network.py` |
+| MSE, gradient descent and manual backpropagation | `src/network.py` |
+| Sigmoid derivative and chain-rule weight update | `src/network.py:sigmoid_neuron_step` |
+| SGD, batch and mini-batch concepts; shuffle, partial batch and seed | `src/network.py`, notebook |
+| Time split, training-only scaling, leakage-aware features | `src/data.py`, `src/forecast.py` |
+| Persistence comparison, MAE, RMSE, R² | `src/forecast.py`, `src/data.py` |
+| Loss, prediction and residual plots | `src/forecast.py` |
+| Perceptron, shapes, finite-difference gradients, training and reproducibility tests | `tests/test_powerwise.py` |
 
-## Viva questions
+## Common viva questions
 
-- **What is a perceptron?** A linear weighted sum plus bias followed by a threshold activation.
-- **Why can’t a single perceptron learn XOR?** XOR is not linearly separable.
-- **Why ReLU in the hidden layer?** It is simple, nonlinear, and has a straightforward derivative.
-- **Why linear output for demand?** Demand is a continuous numeric value, not a class probability.
-- **What are weights and biases?** Trainable parameters controlling each neuron's weighted sum and offset.
-- **What does feedforward do?** Computes layer outputs from inputs toward the prediction.
-- **What is backpropagation?** Applies the chain rule from loss back through the layers to calculate parameter gradients.
-- **Why use mini-batches?** They provide more frequent updates than full-batch training while averaging gradients over multiple examples.
-- **Why split time chronologically?** A forecast should not train on observations from after its evaluation period.
+- **Why is demand forecasting regression?** Its output is a continuous numerical quantity.
+- **Why use a linear output activation?** It allows continuous predictions without restricting them to a probability range.
+- **Why can’t a single perceptron learn XOR?** A single linear boundary cannot separate XOR classes.
+- **What does feedforward propagation do?** It computes activations from input toward the output layer.
+- **What does backpropagation do?** It applies the chain rule to compute how each parameter affected the loss.
+- **Why use mini-batches?** They average gradients over a small group while making more frequent updates than full-batch training.
+- **Why split chronologically?** Future observations must not be used to train a model evaluated on earlier times.
 
-## Limitations and next steps
+## Limitations and future work
 
-The generated series is synthetic; forecast features assume weather for the target hour is known. The small one-hidden-layer MLP is a teaching tool and does not model complex seasonality as well as a carefully validated operational system. For a real study, add a cited public load dataset, document units and missing values, confirm forecast-time weather availability, tune hyperparameters on validation only, and reserve the latest period for one final test.
+The built-in data is synthetic and simplified. For a college study, use a documented public electricity dataset, explain its units and missing values, and verify that weather features would have been known at forecast time. This small MLP is intended to make the mathematics clear, not to represent an operational utility forecasting system. Possible extensions include richer lag features, seasonal datasets, rolling-origin evaluation, and an optional PyTorch comparison model.

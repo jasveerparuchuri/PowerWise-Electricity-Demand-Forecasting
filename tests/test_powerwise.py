@@ -1,9 +1,10 @@
 import numpy as np
 
-from powerwise.activations import relu, sigmoid, tanh
-from powerwise.data import Standardizer, chronological_split, make_features, make_synthetic_demand
-from powerwise.network import NumpyMLP, mse
-from powerwise.perceptron import Perceptron
+from src.activations import relu, sigmoid, tanh
+from src.data import Standardizer, chronological_split, make_features, make_synthetic_demand
+from src.data_collection import load_demand_data
+from src.network import NumpyMLP, mse
+from src.perceptron import Perceptron
 
 
 def test_activations():
@@ -52,3 +53,18 @@ def test_time_split_and_training_only_scaling():
     scaler = Standardizer().fit(xt.to_numpy())
     assert np.allclose(scaler.mean_, xt.to_numpy().mean(axis=0))
     assert len(yt) + len(yv) + len(ye) == len(y)
+
+
+def test_csv_input_validation(tmp_path):
+    path = tmp_path / "demand.csv"
+    path.write_text("timestamp,demand,temperature\n2024-01-01 00:00,10,20\n2024-01-01 01:00,11,21\n")
+    frame = load_demand_data(path)
+    assert list(frame.columns) == ["timestamp", "demand", "temperature"]
+    bad = tmp_path / "bad.csv"
+    bad.write_text("timestamp,demand\n2024-01-01,10\n")
+    try:
+        load_demand_data(bad)
+    except ValueError as exc:
+        assert "temperature" in str(exc)
+    else:
+        raise AssertionError("missing input columns should fail clearly")

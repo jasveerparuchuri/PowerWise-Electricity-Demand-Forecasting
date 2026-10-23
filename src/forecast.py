@@ -9,11 +9,13 @@ import numpy as np
 
 from .data import (Standardizer, chronological_split, make_features,
                    make_synthetic_demand, regression_metrics)
+from .data_collection import load_demand_data
 from .network import NumpyMLP
 
 
-def run(output: str = "outputs", epochs: int = 300, seed: int = 7) -> dict[str, dict[str, float]]:
-    frame = make_synthetic_demand()
+def run(output: str = "reports/latest", epochs: int = 300, seed: int = 7,
+        csv_path: str | None = None) -> dict[str, dict[str, float]]:
+    frame = load_demand_data(csv_path)
     X, y = make_features(frame)
     xt, yt, xv, yv, xe, ye = chronological_split(X, y)
     scaler = Standardizer().fit(xt.to_numpy())
@@ -39,5 +41,5 @@ def run(output: str = "outputs", epochs: int = 300, seed: int = 7) -> dict[str, 
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(); parser.add_argument("--output", default="outputs"); parser.add_argument("--epochs", type=int, default=300); parser.add_argument("--seed", type=int, default=7)
-    args = parser.parse_args(); print(run(args.output, args.epochs, args.seed))
+    parser = argparse.ArgumentParser(); parser.add_argument("--output", default="reports/latest"); parser.add_argument("--epochs", type=int, default=300); parser.add_argument("--seed", type=int, default=7); parser.add_argument("--csv", help="CSV with timestamp,demand,temperature columns")
+    args = parser.parse_args(); print(run(args.output, args.epochs, args.seed, args.csv))
